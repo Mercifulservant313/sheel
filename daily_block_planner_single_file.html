@@ -161,6 +161,13 @@
     /* Drag selection overlay */
     .drag-overlay { position:absolute; left:8px; right:8px; background: rgba(99,102,241,0.2); border:2px solid var(--accent-2); border-radius: 10px; pointer-events:none; display:none; }
 
+    /* Week view styles */
+    /* Simple list style for week overview. Each day has a bold header and each block is indented. */
+    #weekContainer { margin-top: 8px; }
+    .week-day { margin: 12px 0 4px; font-weight: bold; }
+    .week-block { margin-left: 16px; padding: 2px 0; border-left: 3px solid var(--accent-2); }
+    .week-block.completed { opacity: 0.6; text-decoration: line-through; }
+
   </style>
 </head>
 <body>
@@ -170,7 +177,7 @@
       <div id="todayLabel"></div>
       <div class="segmented" role="tablist" aria-label="View switch">
         <button id="dayViewBtn" class="active" aria-selected="true">Day</button>
-        <button id="weekViewBtn" aria-selected="false" title="Week view coming soon">Week</button>
+        <button id="weekViewBtn" aria-selected="false" title="Week view">Week</button>
       </div>
       <div class="progress" id="progressText">0% complete</div>
     </div>
@@ -206,6 +213,8 @@
           <div id="dragOverlay" class="drag-overlay" aria-hidden="true"></div>
         </div>
       </div>
+      <!-- Week overview container (hidden by default) -->
+      <div id="weekContainer" style="display:none;"></div>
     </div>
   </div>
 
@@ -671,6 +680,11 @@
   let CURRENT_DATE = fmtDate(now());
   let BLOCKS = []; // all blocks from DB; filtered per date during render
 
+  // Track whether the user is viewing a single day or the entire week. The default
+  // is 'day'. When set to 'week' we render a week overview and adjust top bar
+  // labeling accordingly.
+  let VIEW_MODE = 'day';
+
   // Scheduling
   let scheduled = []; // {timeoutId, blockId, when}
   let playingQueue = [];
@@ -685,7 +699,21 @@
   }
 
   function renderTopBar() {
-    $('#todayLabel').textContent = new Date(CURRENT_DATE + 'T00:00').toDateString();
+    // Update the label depending on current view mode. In day view we show the single date,
+    // in week view we show the start and end of the current week.
+    if (typeof VIEW_MODE !== 'undefined' && VIEW_MODE === 'week') {
+      const dt = new Date(CURRENT_DATE + 'T00:00');
+      const dayOfWeek = dt.getDay();
+      const start = new Date(dt);
+      start.setDate(dt.getDate() - dayOfWeek);
+      const end = new Date(start);
+      end.setDate(start.getDate() + 6);
+      const opts = { month:'short', day:'numeric' };
+      $('#todayLabel').textContent = `${start.toLocaleDateString(undefined, opts)} - ${end.toLocaleDateString(undefined, opts)}`;
+    } else {
+      $('#todayLabel').textContent = new Date(CURRENT_DATE + 'T00:00').toDateString();
+    }
+    // Highlight the selected increment button
     $$('.incBtn').forEach(b => b.classList.toggle('active', Number(b.dataset.inc) === SETTINGS.defaultIncrement));
     updateProgress();
   }
@@ -799,6 +827,8 @@
       dayCol.appendChild(card);
     }
 
+    // (renderWeek function moved to top-level below)
+
     // Drag create behavior
     const slotsEls = dayCol.querySelectorAll('.slot');
     let dragStart = null; let dragging = false;
@@ -842,10 +872,63 @@
     });
   }
 
+  // Render a simplified week overview. This function is defined at the top level so it
+  // can be invoked by UI handlers. It generates a list of days starting on Sunday for
+  // the week containing CURRENT_DATE. Each day shows its date header and a list of
+  // blocks (start–end and title). Completed blocks appear struck through.
+  function renderWeek() {
+    const container = document.getElementById('weekContainer');
+    if (!container) return;
+    container.innerHTML = '';
+    const dt = new Date(CURRENT_DATE + 'T00:00');
+    const dayOfWeek = dt.getDay();
+    const start = new Date(dt);
+    start.setDate(dt.getDate() - dayOfWeek);
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(start);
+      d.setDate(start.getDate() + i);
+      const dateStr = fmtDate(d);
+      const dayHeader = document.createElement('div');
+      dayHeader.className = 'week-day';
+      dayHeader.textContent = d.toLocaleDateString(undefined, { weekday:'short', month:'short', day:'numeric' });
+      container.appendChild(dayHeader);
+      const blocks = blocksForDate(dateStr);
+      if (!blocks.length) {
+        const none = document.createElement('div');
+        none.className = 'week-block';
+        none.textContent = 'No blocks';
+        container.appendChild(none);
+      } else {
+        blocks.forEach(b => {
+          const item = document.createElement('div');
+          item.className = 'week-block';
+          if (b.completed) item.classList.add('completed');
+          item.textContent = `${b.start}–${b.end} ${b.title || 'Untitled'}`;
+          container.appendChild(item);
+        });
+      }
+    }
+  }
+
   function updateProgress() {
-    const todays = blocksForDate(CURRENT_DATE);
-    const total = todays.length || 1;
-    const completed = todays.filter(b => b.completed).length;
+    // Calculate progress for either the current day or the entire week, depending on view.
+    let tasks = [];
+    if (typeof VIEW_MODE !== 'undefined' && VIEW_MODE === 'week') {
+      // accumulate all blocks for each day of this week
+      const dt = new Date(CURRENT_DATE + 'T00:00');
+      const dayOfWeek = dt.getDay();
+      const start = new Date(dt);
+      start.setDate(dt.getDate() - dayOfWeek);
+      for (let i = 0; i < 7; i++) {
+        const d = new Date(start);
+        d.setDate(start.getDate() + i);
+        tasks = tasks.concat(blocksForDate(fmtDate(d)));
+      }
+    } else {
+      tasks = blocksForDate(CURRENT_DATE);
+    }
+    const total = tasks.length || 1;
+    const completed = tasks.filter(b => b.completed).length;
     $('#progressText').textContent = `${Math.round((completed/total)*100)}% complete`;
   }
 
@@ -1304,6 +1387,34 @@
 
     $$('.incBtn').forEach(b=> b.onclick = () => { SETTINGS.defaultIncrement = Number(b.dataset.inc); saveSettings(); renderGrid(); scheduleAll(); $$('.incBtn').forEach(x=>x.classList.toggle('active', x===b)); });
 
+    // Switch between day and week views. The week view shows a summary of the
+    // entire week while the day view shows the detailed grid. Update the
+    // VIEW_MODE variable and toggle visibility of containers accordingly.
+    $('#dayViewBtn').onclick = () => {
+      VIEW_MODE = 'day';
+      $('#dayViewBtn').classList.add('active');
+      $('#weekViewBtn').classList.remove('active');
+      // Show day grid and hide week overview
+      const dg = document.getElementById('dayGrid');
+      const wc = document.getElementById('weekContainer');
+      if (dg) dg.style.display = '';
+      if (wc) wc.style.display = 'none';
+      renderTopBar();
+      renderGrid();
+    };
+    $('#weekViewBtn').onclick = () => {
+      VIEW_MODE = 'week';
+      $('#weekViewBtn').classList.add('active');
+      $('#dayViewBtn').classList.remove('active');
+      // Hide day grid and show week overview
+      const dg = document.getElementById('dayGrid');
+      const wc = document.getElementById('weekContainer');
+      if (dg) dg.style.display = 'none';
+      if (wc) wc.style.display = '';
+      renderTopBar();
+      renderWeek();
+    };
+
     // Block editor tabs
     $$('.tabBtn').forEach(btn=> btn.addEventListener('click', ()=>{
       $$('.tabBtn').forEach(b=>b.classList.remove('active'));
@@ -1444,6 +1555,24 @@
   $('#devSetNow')?.addEventListener('click', ()=>{ const m = Number($('#devOffset').value)||0; timeOffsetMs = m*60*1000; scheduleAll(); });
   $('#devAdvance5')?.addEventListener('click', ()=>{ timeOffsetMs += 5*60*1000; scheduleAll(); });
   $('#devResetOffset')?.addEventListener('click', ()=>{ timeOffsetMs = 0; $('#devOffset').value = 0; scheduleAll(); });
+
+  // Keep the CURRENT_DATE in sync with the real time. Every minute we check if the
+  // date returned by `now()` (which factors in any developer time offsets) has changed.
+  // If it has, we update CURRENT_DATE and re-render the appropriate view (day or week).
+  setInterval(() => {
+    const newDate = fmtDate(now());
+    if (newDate !== CURRENT_DATE) {
+      CURRENT_DATE = newDate;
+      if (typeof VIEW_MODE !== 'undefined' && VIEW_MODE === 'week') {
+        renderTopBar();
+        renderWeek();
+      } else {
+        renderTopBar();
+        renderGrid();
+      }
+      scheduleAll();
+    }
+  }, 60 * 1000);
 
   // Start app
   init();
