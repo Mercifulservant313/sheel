@@ -1,0 +1,1453 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Daily Block Planner with Scheduled Voice Prompts</title>
+  <style>
+    /* =============================================================
+       DAILY BLOCK PLANNER — SINGLE FILE (HTML + CSS + JS)
+       Clean, commented, no external libraries. Runs offline.
+       ============================================================= */
+
+    :root {
+      --bg: #0f172a;            /* slate-900 */
+      --panel: #111827;         /* gray-900 */
+      --panel-2: #1f2937;       /* gray-800 */
+      --text: #e5e7eb;          /* gray-200 */
+      --muted: #9ca3af;         /* gray-400 */
+      --accent: #22c55e;        /* green-500 */
+      --accent-2: #60a5fa;      /* blue-400 */
+      --danger: #ef4444;        /* red-500 */
+      --warn: #f59e0b;          /* amber-500 */
+      --grid-border: #334155;   /* slate-600 */
+      --card: #0b1530;          /* slightly darker */
+      --done: #0a3120;          /* green-ish */
+      --shadow: rgba(0,0,0,0.25);
+    }
+
+    [data-theme="light"] {
+      --bg: #f8fafc;            /* slate-50 */
+      --panel: #ffffff;         /* white */
+      --panel-2: #f1f5f9;       /* slate-100 */
+      --text: #0f172a;          /* slate-900 */
+      --muted: #475569;         /* slate-600 */
+      --accent: #16a34a;        /* green-600 */
+      --accent-2: #2563eb;      /* blue-600 */
+      --danger: #dc2626;        /* red-600 */
+      --warn: #d97706;          /* amber-600 */
+      --grid-border: #cbd5e1;   /* slate-300 */
+      --card: #ffffff;
+      --done: #e6ffed;
+      --shadow: rgba(0,0,0,0.1);
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+      margin: 0;
+    }
+
+    /* Top bar */
+    .topbar {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 16px;
+      background: var(--panel);
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      box-shadow: 0 2px 10px var(--shadow);
+    }
+    .topbar .left, .topbar .center, .topbar .right { display:flex; align-items:center; gap:10px; }
+    .topbar .left { justify-content:flex-start; }
+    .topbar .center { justify-content:center; }
+    .topbar .right { justify-content:flex-end; }
+
+    .btn, button.btn {
+      background: var(--panel-2);
+      color: var(--text);
+      border: 1px solid var(--grid-border);
+      padding: 8px 12px;
+      border-radius: 10px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    .btn:hover { filter: brightness(1.05); }
+    .btn.primary { background: linear-gradient(135deg, var(--accent), var(--accent-2)); border-color: transparent; color: white; }
+    .btn.danger { background: var(--danger); color:white; border-color: transparent; }
+    .btn.warn { background: var(--warn); color:white; border-color: transparent; }
+    .segmented { display:inline-flex; border:1px solid var(--grid-border); border-radius:8px; overflow:hidden; }
+    .segmented button { border:0; padding:6px 10px; background:transparent; color:var(--text); cursor:pointer; }
+    .segmented button.active { background: var(--accent-2); color:white; }
+
+    .progress {
+      margin-left: 8px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    /* Layout */
+    .container { display:grid; grid-template-columns: 1fr; max-width: 1100px; margin: 12px auto 56px; padding: 0 12px; gap:12px; }
+
+    .grid-wrap { background: var(--panel); border: 1px solid var(--grid-border); border-radius: 12px; overflow:hidden; }
+    .grid { display:grid; grid-template-columns: 90px 1fr; }
+    .time-col { background: var(--panel-2); border-right:1px solid var(--grid-border); }
+    .time-slot { padding: 10px 8px; border-bottom:1px dashed var(--grid-border); font-size: 12px; color:var(--muted); }
+    .day-col { position: relative; }
+    .slot { border-bottom:1px dashed var(--grid-border); height: 44px; position: relative; }
+
+    /* Block cards inside the grid */
+    .block-card {
+      position: absolute;
+      left: 8px;
+      right: 8px;
+      padding: 10px 10px 10px 14px;
+      background: var(--card);
+      border: 1px solid var(--grid-border);
+      border-left: 4px solid var(--accent-2);
+      border-radius: 12px;
+      box-shadow: 0 8px 18px var(--shadow);
+      display:flex; align-items:center; gap:10px;
+    }
+    .block-main { flex:1; }
+    .block-title { font-size: 14px; font-weight: 600; }
+    .block-time { font-size: 12px; color: var(--muted); }
+    .block-icons { display:flex; gap:6px; color:var(--muted); }
+    .block-actions { display:none; gap:8px; }
+    .block-card:hover .block-actions { display:flex; }
+    .block-complete { display:flex; align-items:center; gap:6px; }
+    .block-card.completed { background: var(--done); color: #0f5132; border-left-color: var(--accent); opacity: 0.8; text-decoration: line-through; }
+
+    .legend { padding:10px 12px; color: var(--muted); font-size: 12px; }
+
+    /* Modals */
+    .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display:none; align-items:center; justify-content:center; z-index: 100; }
+    .modal { background: var(--panel); border: 1px solid var(--grid-border); border-radius: 12px; width: min(780px, 92vw); max-height: 86vh; overflow:auto; box-shadow: 0 12px 30px var(--shadow); }
+    .modal header { display:flex; align-items:center; justify-content:space-between; padding: 12px 16px; border-bottom:1px solid var(--grid-border); position:sticky; top:0; background:inherit; }
+    .modal .content { padding: 14px 16px; }
+
+    .row { display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom: 10px; }
+    .row-3 { display:grid; grid-template-columns: 1fr 1fr 1fr; gap:10px; margin-bottom: 10px; }
+    label { font-size: 13px; color: var(--muted); display:block; margin-bottom:6px; }
+    input[type="text"], input[type="time"], textarea, select, input[type="number"], input[type="color"] {
+      width: 100%; padding:10px; border-radius:10px; background: var(--panel-2); color: var(--text);
+      border: 1px solid var(--grid-border);
+    }
+    textarea { min-height: 80px; resize: vertical; }
+    .tabs { display:flex; gap:8px; margin: 8px 0 16px; }
+    .tabs button { padding:8px 12px; border-radius: 10px; border:1px solid var(--grid-border); background: var(--panel-2); color:var(--text); cursor:pointer; }
+    .tabs button.active { background: var(--accent-2); color:white; border-color: transparent; }
+
+    .footer { display:flex; justify-content:flex-end; gap:10px; padding: 12px 16px; border-top:1px solid var(--grid-border); position:sticky; bottom:0; background:inherit; }
+
+    /* Catch-up banner */
+    .catchup { position: sticky; top: 48px; z-index: 40; margin: 0 0 8px; display:none; }
+    .catchup .box { background: var(--warn); color:white; border-radius: 10px; padding:10px 12px; display:flex; align-items:center; justify-content:space-between; gap:10px; }
+
+    /* Now playing bar */
+    .now-playing { position: fixed; bottom: 10px; left: 10px; right: 10px; margin:auto; max-width: 900px; background: var(--panel); border: 1px solid var(--grid-border); border-radius: 12px; padding: 10px 12px; display:none; align-items:center; gap: 10px; box-shadow: 0 12px 30px var(--shadow); z-index: 60; }
+
+    /* Confetti canvas */
+    #confettiCanvas { position: fixed; inset: 0; pointer-events: none; z-index: 200; }
+
+    /* Help and diagnostics small styles */
+    .hint { color: var(--muted); font-size: 12px; }
+
+    /* Drag selection overlay */
+    .drag-overlay { position:absolute; left:8px; right:8px; background: rgba(99,102,241,0.2); border:2px solid var(--accent-2); border-radius: 10px; pointer-events:none; display:none; }
+
+  </style>
+</head>
+<body>
+  <!-- Top Bar -->
+  <div class="topbar">
+    <div class="left">
+      <div id="todayLabel"></div>
+      <div class="segmented" role="tablist" aria-label="View switch">
+        <button id="dayViewBtn" class="active" aria-selected="true">Day</button>
+        <button id="weekViewBtn" aria-selected="false" title="Week view coming soon">Week</button>
+      </div>
+      <div class="progress" id="progressText">0% complete</div>
+    </div>
+    <div class="center">
+      <span class="hint">Increment</span>
+      <div class="segmented" role="tablist" aria-label="Increment selector">
+        <button class="incBtn active" data-inc="15">15</button>
+        <button class="incBtn" data-inc="30">30</button>
+        <button class="incBtn" data-inc="60">60</button>
+      </div>
+    </div>
+    <div class="right">
+      <button class="btn" id="newBlockBtn" title="N">New Block</button>
+      <button class="btn" id="templatesBtn">Templates</button>
+      <button class="btn" id="importExportBtn">Import/Export</button>
+      <button class="btn" id="settingsBtn">Settings</button>
+      <button class="btn" id="helpBtn">Help</button>
+    </div>
+  </div>
+
+  <!-- Catch-up banner -->
+  <div class="container">
+    <div id="catchup" class="catchup"></div>
+  </div>
+
+  <!-- Day Grid -->
+  <div class="container">
+    <div class="grid-wrap">
+      <div class="legend">Drag on the grid to create a block. Hover a block for actions. Audio auto-plays only after you click Enable Audio and keep this tab OPEN.</div>
+      <div class="grid" id="dayGrid">
+        <div class="time-col" id="timeCol"></div>
+        <div class="day-col" id="dayCol" tabindex="0" aria-label="Day grid">
+          <div id="dragOverlay" class="drag-overlay" aria-hidden="true"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Now Playing Bar -->
+  <div class="now-playing" id="nowPlaying">
+    <div>Now Playing: <strong id="npTitle">None</strong> <span class="hint" id="npTime"></span></div>
+    <div style="margin-left:auto; display:flex; gap:8px;">
+      <button class="btn" id="npPause">Pause</button>
+      <button class="btn" id="npSkip">Skip</button>
+      <input type="range" id="npVolume" min="0" max="1" step="0.01" title="Volume" />
+    </div>
+  </div>
+
+  <!-- Confetti Canvas -->
+  <canvas id="confettiCanvas"></canvas>
+
+  <!-- ONBOARDING MODAL (Enable Audio + Notifications) -->
+  <div class="modal-backdrop" id="onboardWrap" aria-modal="true" role="dialog">
+    <div class="modal" role="document" aria-labelledby="onboardTitle">
+      <header>
+        <h3 id="onboardTitle">Welcome — Enable Audio And Notifications</h3>
+        <button class="btn" id="onboardClose">Close</button>
+      </header>
+      <div class="content">
+        <p>This app can play your prerecorded reminders at the exact start time of a block. Modern browsers require <strong>one user gesture</strong> to unlock audio autoplay.</p>
+        <div style="display:flex; gap:12px; flex-wrap:wrap; margin: 12px 0;">
+          <button class="btn primary" id="enableAudioBtn">Enable Audio (Unlock WebAudio)</button>
+          <button class="btn" id="askNotifBtn">Grant Notifications</button>
+          <button class="btn" id="testNotifBtn" disabled>Send Test Notification</button>
+        </div>
+        <p class="hint">Notifications use the system sound only. Custom audio requires this tab to be open and audio enabled.</p>
+        <hr style="border-color: var(--grid-border);" />
+        <div>
+          <label>Quick theme</label>
+          <div class="segmented">
+            <button id="themeDark">Dark</button>
+            <button id="themeLight">Light</button>
+          </div>
+        </div>
+      </div>
+      <div class="footer">
+        <button class="btn" id="onboardGotIt">Got it</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- BLOCK EDITOR MODAL -->
+  <div class="modal-backdrop" id="blockModalWrap" aria-modal="true" role="dialog">
+    <div class="modal" role="document" aria-labelledby="blockTitle">
+      <header>
+        <h3 id="blockTitle">Edit Block</h3>
+        <button class="btn" id="blockClose">Close</button>
+      </header>
+      <div class="content">
+        <div class="tabs">
+          <button class="tabBtn active" data-tab="detailsTab">Details</button>
+          <button class="tabBtn" data-tab="remindersTab">Reminders</button>
+        </div>
+        <div id="detailsTab" class="tabPane">
+          <div class="row">
+            <div>
+              <label>Title</label>
+              <input type="text" id="bTitle" placeholder="eg. Rounds, Study, Workout" />
+            </div>
+            <div>
+              <label>Date (YYYY-MM-DD)</label>
+              <input type="text" id="bDate" />
+            </div>
+          </div>
+          <div class="row-3">
+            <div>
+              <label>Start</label>
+              <input type="time" id="bStart" />
+            </div>
+            <div>
+              <label>End</label>
+              <input type="time" id="bEnd" />
+            </div>
+            <div>
+              <label>Repeat weekly on</label>
+              <select id="bRepeat" multiple>
+                <option value="0">Sun</option>
+                <option value="1">Mon</option>
+                <option value="2">Tue</option>
+                <option value="3">Wed</option>
+                <option value="4">Thu</option>
+                <option value="5">Fri</option>
+                <option value="6">Sat</option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <label>Notes</label>
+            <textarea id="bNotes" placeholder="Optional notes"></textarea>
+          </div>
+        </div>
+        <div id="remindersTab" class="tabPane" style="display:none;">
+          <div class="row">
+            <div>
+              <label>Attach Audio (.mp3/.m4a/.wav)</label>
+              <input type="file" id="bAudioFile" accept="audio/*" />
+              <div class="hint" id="bAudioInfo">No audio attached.</div>
+              <div style="display:flex; gap:8px; margin-top:8px;">
+                <button class="btn" id="bReplaceAudio">Replace</button>
+                <button class="btn danger" id="bRemoveAudio">Remove</button>
+                <button class="btn" id="bPreviewAudio">Preview Audio</button>
+              </div>
+            </div>
+            <div>
+              <label>TTS Message (used if no audio or toggle is ON)</label>
+              <textarea id="bTTSText" placeholder="eg. Time to start rounds."></textarea>
+              <div class="row">
+                <div>
+                  <label>Voice</label>
+                  <select id="bTTSVoice"></select>
+                </div>
+                <div>
+                  <label>Rate</label>
+                  <input type="number" id="bTTSRate" step="0.1" min="0.5" max="2" value="1" />
+                </div>
+              </div>
+              <div class="row">
+                <div>
+                  <label>Pitch</label>
+                  <input type="number" id="bTTSPitch" step="0.1" min="0.5" max="2" value="1" />
+                </div>
+                <div>
+                  <label>Use TTS if no audio?</label>
+                  <select id="bTTSToggle">
+                    <option value="yes">Yes</option>
+                    <option value="no">No</option>
+                  </select>
+                </div>
+              </div>
+              <div class="row">
+                <div>
+                  <label>Pre-roll chime 3s before start?</label>
+                  <select id="bPreroll">
+                    <option value="yes">Yes</option>
+                    <option value="no">No</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="footer">
+        <button class="btn danger" id="bDelete">Delete</button>
+        <button class="btn" id="bDuplicate">Duplicate</button>
+        <button class="btn" id="bCancel">Cancel</button>
+        <button class="btn primary" id="bSave">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- SETTINGS MODAL -->
+  <div class="modal-backdrop" id="settingsWrap" aria-modal="true" role="dialog">
+    <div class="modal" role="document" aria-labelledby="settingsTitle">
+      <header>
+        <h3 id="settingsTitle">Settings</h3>
+        <button class="btn" id="settingsClose">Close</button>
+      </header>
+      <div class="content">
+        <div class="row-3">
+          <div>
+            <label>Day start</label>
+            <input type="time" id="sDayStart" />
+          </div>
+          <div>
+            <label>Day end</label>
+            <input type="time" id="sDayEnd" />
+          </div>
+          <div>
+            <label>Default increment (min)</label>
+            <select id="sInc">
+              <option value="15">15</option>
+              <option value="30">30</option>
+              <option value="60">60</option>
+            </select>
+          </div>
+        </div>
+        <div class="row-3">
+          <div>
+            <label>Notifications at block start</label>
+            <select id="sNotifs"><option value="on">On</option><option value="off">Off</option></select>
+            <div class="hint">Notifications work while this page is open. Scheduling while closed is not supported in a single-file offline app.</div>
+          </div>
+          <div>
+            <label>Theme</label>
+            <select id="sTheme"><option value="dark">Dark</option><option value="light">Light</option></select>
+          </div>
+          <div>
+            <label>Completion jingle volume</label>
+            <input id="sJingle" type="range" min="0" max="1" step="0.01" />
+          </div>
+        </div>
+        <div>
+          <label>Custom background (color or CSS gradient)</label>
+          <input type="text" id="sBg" placeholder="#0f172a or linear-gradient(...)" />
+        </div>
+
+        <hr style="border-color: var(--grid-border);" />
+        <details>
+          <summary>Keyboard shortcuts</summary>
+          <div class="hint">N = new block, E = edit selected, Enter = complete, Space = preview audio, S = snooze 10 min, Arrows = move selection. Toggle below disables while typing.</div>
+          <label>Disable shortcuts while typing?</label>
+          <select id="sShortcuts"><option value="on">On</option><option value="off">Off</option></select>
+        </details>
+
+        <hr style="border-color: var(--grid-border);" />
+        <details>
+          <summary>Developer: Time Travel + Diagnostics</summary>
+          <div class="row-3">
+            <div>
+              <label>Time offset minutes</label>
+              <input type="number" id="devOffset" value="0" />
+            </div>
+            <div style="display:flex; align-items:flex-end; gap:8px;">
+              <button class="btn" id="devSetNow">Apply Offset</button>
+              <button class="btn" id="devAdvance5">Advance +5m</button>
+              <button class="btn" id="devResetOffset">Reset</button>
+            </div>
+          </div>
+          <div>
+            <label>Upcoming timers</label>
+            <div id="diagTimers" class="hint"></div>
+          </div>
+          <div>
+            <label>WebAudio/Notification State</label>
+            <div id="diagState" class="hint"></div>
+          </div>
+        </details>
+      </div>
+      <div class="footer">
+        <button class="btn" id="settingsCancel">Cancel</button>
+        <button class="btn primary" id="settingsSave">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- TEMPLATES MODAL -->
+  <div class="modal-backdrop" id="templatesWrap" aria-modal="true" role="dialog">
+    <div class="modal" role="document" aria-labelledby="templatesTitle">
+      <header>
+        <h3 id="templatesTitle">Templates</h3>
+        <button class="btn" id="templatesClose">Close</button>
+      </header>
+      <div class="content">
+        <div style="display:flex; gap:8px; align-items:flex-end;">
+          <div style="flex:1;">
+            <label>Save current day as template name</label>
+            <input type="text" id="tplName" placeholder="eg. Surgery Rotation Weekday" />
+          </div>
+          <button class="btn" id="tplSave">Save Template</button>
+        </div>
+        <hr style="border-color: var(--grid-border);" />
+        <div id="tplList"></div>
+      </div>
+      <div class="footer">
+        <button class="btn" id="tplClose">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- IMPORT/EXPORT MODAL -->
+  <div class="modal-backdrop" id="imexWrap" aria-modal="true" role="dialog">
+    <div class="modal" role="document" aria-labelledby="imexTitle">
+      <header>
+        <h3 id="imexTitle">Import / Export</h3>
+        <button class="btn" id="imexClose">Close</button>
+      </header>
+      <div class="content">
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          <button class="btn" id="exportBtn">Export JSON (selected date + templates + settings)</button>
+          <input type="file" id="importFile" accept="application/json" />
+          <button class="btn" id="importBtn">Import</button>
+        </div>
+        <div id="imexSummary" class="hint" style="margin-top:10px;"></div>
+      </div>
+      <div class="footer">
+        <button class="btn" id="imexDone">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- HELP MODAL -->
+  <div class="modal-backdrop" id="helpWrap" aria-modal="true" role="dialog">
+    <div class="modal" role="document" aria-labelledby="helpTitle">
+      <header>
+        <h3 id="helpTitle">Quick Guide</h3>
+        <button class="btn" id="helpClose">Close</button>
+      </header>
+      <div class="content">
+        <ol>
+          <li>Click <strong>Enable Audio</strong> the first time. This unlocks autoplay for your scheduled recordings.</li>
+          <li>Keep this tab OPEN for custom audio. If closed, you may still get system notifications while the page is open later, but no custom sounds can play in the background.</li>
+          <li>Create blocks with the <strong>New Block</strong> button or by dragging the grid. Hover a block to edit, duplicate, delete, attach audio, preview, or snooze.</li>
+          <li>Check the box on completion. You will hear a short jingle, see confetti, and your day progress will update.</li>
+          <li>Use <strong>Templates</strong> to save and re-apply common day layouts. Use <strong>Import/Export</strong> to back up or move data.</li>
+        </ol>
+        <p class="hint">This app runs 100% locally and stores data in IndexedDB. No network access is required.</p>
+      </div>
+      <div class="footer">
+        <button class="btn" id="helpDone">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  // =============================================================
+  // DAILY BLOCK PLANNER — SINGLE FILE APPLICATION
+  // - IndexedDB persistence (blocks, audio, settings, templates)
+  // - Scheduling engine (setTimeout) with catch-up reconciliation
+  // - WebAudio unlock and playback; TTS fallback; Notifications
+  // - No external libraries — clean, commented, modular-ish
+  // =============================================================
+
+  // ---------- Utilities ----------
+  const $ = sel => document.querySelector(sel);
+  const $$ = sel => Array.from(document.querySelectorAll(sel));
+  const wait = ms => new Promise(r => setTimeout(r, ms));
+  const pad = n => String(n).padStart(2, '0');
+
+  function fmtDate(d) { return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; }
+  function toHM(date) { return `${pad(date.getHours())}:${pad(date.getMinutes())}`; }
+  function hmToMinutes(hm) { const [h,m] = hm.split(":").map(Number); return h*60 + m; }
+  function minutesToTop(mins, dayStartMins, pxPerSlot, inc) { return Math.max(0, Math.round((mins - dayStartMins) / inc) * pxPerSlot); }
+  function uid() { return (crypto.randomUUID ? crypto.randomUUID() : `id_${Date.now()}_${Math.random().toString(36).slice(2)}`); }
+  function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+  function parseGradientOrColor(val) { return val && val.trim().length ? val.trim() : null; }
+
+  // Simulated time offset (developer time travel)
+  let timeOffsetMs = 0; // positive means simulated future
+  function now() { return new Date(Date.now() + timeOffsetMs); }
+
+  // ---------- Audio (WebAudio + HTMLAudio) ----------
+  let audioCtx = null; // created on Enable Audio
+  let audioUnlocked = false; // session flag
+  const jingleB64 = "UklGRkZWAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YSJWAAAAAGcCyQQgB2cJmAuwDagPfRErE60UABYiFw8YxhhFQyobZR1tImQkZCttL3QydTt/P4BAQED/9vX09fX29vb+/v7+//7+//7+//7+//7+//7+//7+//7+/v7+/v7+/v7+//7+//7+//7+/v7+/v7+//7+//7+//7+/v7+//7+//7+//7+/v7+//7+//7+//7+/v7+//7+//7+//7+/v7+//7+//7+";
+  // Note: The above is a tiny WAV beep (approx 0.25s). If needed, replace with another base64 clip.
+
+  function ensureAudioContext() {
+    if (!audioCtx) {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    return audioCtx;
+  }
+
+  function unlockAudio() {
+    try {
+      ensureAudioContext();
+      const buf = audioCtx.createBuffer(1, 1, 22050);
+      const src = audioCtx.createBufferSource();
+      src.buffer = buf; src.connect(audioCtx.destination); src.start(0);
+      audioUnlocked = true;
+      localStorage.setItem('audioUnlocked', '1');
+      updateDiag();
+    } catch (e) { console.error('Audio unlock failed', e); }
+  }
+
+  function playBase64Jingle(volume=0.7) {
+    // Create an <audio> element for the embedded base64 WAV
+    const a = new Audio(`data:audio/wav;base64,${jingleB64}`);
+    a.volume = volume;
+    a.play().catch(()=>{});
+  }
+
+  // TTS helpers
+  function speak(text, {voiceName=null, rate=1, pitch=1}={}) {
+    return new Promise((resolve) => {
+      if (!text || !('speechSynthesis' in window)) return resolve(false);
+      const u = new SpeechSynthesisUtterance(text);
+      const voices = speechSynthesis.getVoices();
+      if (voiceName) {
+        const v = voices.find(x => x.name === voiceName);
+        if (v) u.voice = v;
+      }
+      u.rate = rate; u.pitch = pitch;
+      u.onend = () => resolve(true);
+      speechSynthesis.speak(u);
+    });
+  }
+
+  // ---------- Notifications ----------
+  let notifPermission = Notification && Notification.permission ? Notification.permission : 'default';
+  async function askNotificationPermission() {
+    if (!('Notification' in window)) return;
+    try {
+      const p = await Notification.requestPermission();
+      notifPermission = p;
+      updateDiag();
+    } catch(e) { console.error(e); }
+  }
+  function sendNotification(title, body) {
+    if (!('Notification' in window)) return null;
+    if (Notification.permission !== 'granted') return null;
+    const n = new Notification(title, { body });
+    n.onclick = () => { try { window.focus(); } catch(e){} };
+    return n;
+  }
+
+  // ---------- IndexedDB (Promisified minimal helpers) ----------
+  const DB_NAME = 'dayPlannerDB';
+  const DB_VERSION = 1;
+  let db = null;
+
+  function openDB() {
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open(DB_NAME, DB_VERSION);
+      req.onupgradeneeded = (e) => {
+        const d = e.target.result;
+        if (!d.objectStoreNames.contains('blocks')) {
+          d.createObjectStore('blocks', { keyPath: 'id' });
+        }
+        if (!d.objectStoreNames.contains('audio')) {
+          d.createObjectStore('audio', { keyPath: 'blockId' });
+        }
+        if (!d.objectStoreNames.contains('settings')) {
+          d.createObjectStore('settings', { keyPath: 'key' });
+        }
+        if (!d.objectStoreNames.contains('templates')) {
+          d.createObjectStore('templates', { keyPath: 'id' });
+        }
+      };
+      req.onsuccess = (e) => { db = e.target.result; resolve(db); };
+      req.onerror = (e) => reject(e.target.error);
+    });
+  }
+
+  function tx(store, mode='readonly') {
+    const t = db.transaction(store, mode);
+    return t.objectStore(store);
+  }
+
+  const DB = {
+    async blocksAll() { return new Promise((res, rej) => { const r = tx('blocks').getAll(); r.onsuccess = () => res(r.result||[]); r.onerror = () => rej(r.error); }); },
+    async blocksPut(b) { return new Promise((res, rej) => { const r = tx('blocks', 'readwrite').put(b); r.onsuccess = () => res(true); r.onerror = () => rej(r.error); }); },
+    async blocksDelete(id) { return new Promise((res, rej) => { const r = tx('blocks', 'readwrite').delete(id); r.onsuccess = () => res(true); r.onerror = () => rej(r.error); }); },
+    async audioGet(blockId) { return new Promise((res, rej) => { const r = tx('audio').get(blockId); r.onsuccess = () => res(r.result||null); r.onerror = () => rej(r.error); }); },
+    async audioPut(obj) { return new Promise((res, rej) => { const r = tx('audio', 'readwrite').put(obj); r.onsuccess = () => res(true); r.onerror = () => rej(r.error); }); },
+    async audioDelete(blockId) { return new Promise((res, rej) => { const r = tx('audio', 'readwrite').delete(blockId); r.onsuccess = () => res(true); r.onerror = () => rej(r.error); }); },
+    async settingsGet(key) { return new Promise((res, rej) => { const r = tx('settings').get(key); r.onsuccess = () => res(r.result ? r.result.value : null); r.onerror = () => rej(r.error); }); },
+    async settingsSet(key, value) { return new Promise((res, rej) => { const r = tx('settings', 'readwrite').put({key, value}); r.onsuccess = () => res(true); r.onerror = () => rej(r.error); }); },
+    async templatesAll() { return new Promise((res, rej) => { const r = tx('templates').getAll(); r.onsuccess = () => res(r.result||[]); r.onerror = () => rej(r.error); }); },
+    async templatesPut(tpl) { return new Promise((res, rej) => { const r = tx('templates', 'readwrite').put(tpl); r.onsuccess = () => res(true); r.onerror = () => rej(r.error); }); },
+    async templatesDelete(id) { return new Promise((res, rej) => { const r = tx('templates', 'readwrite').delete(id); r.onsuccess = () => res(true); r.onerror = () => rej(r.error); }); },
+  };
+
+  // ---------- App State ----------
+  let SETTINGS = {
+    audioEnabled: false,                // stored session in localStorage; durable preference kept here as well
+    defaultIncrement: 15,
+    dayStart: '04:00',
+    dayEnd: '24:00',
+    notificationsEnabled: true,
+    theme: (localStorage.getItem('theme') || 'dark'),
+    jingleVolume: 0.7,
+    shortcuts: 'on',
+    customBg: ''
+  };
+
+  let CURRENT_DATE = fmtDate(now());
+  let BLOCKS = []; // all blocks from DB; filtered per date during render
+
+  // Scheduling
+  let scheduled = []; // {timeoutId, blockId, when}
+  let playingQueue = [];
+  let currentAudioEl = null;
+  let currentPlayingBlock = null;
+
+  // ---------- Rendering: top + grid ----------
+  function setTheme(theme) {
+    document.documentElement.setAttribute('data-theme', theme === 'light' ? 'light' : 'dark');
+    localStorage.setItem('theme', theme);
+    if (SETTINGS.customBg) document.documentElement.style.setProperty('--bg', SETTINGS.customBg);
+  }
+
+  function renderTopBar() {
+    $('#todayLabel').textContent = new Date(CURRENT_DATE + 'T00:00').toDateString();
+    $$('.incBtn').forEach(b => b.classList.toggle('active', Number(b.dataset.inc) === SETTINGS.defaultIncrement));
+    updateProgress();
+  }
+
+  function genSlots() {
+    const inc = SETTINGS.defaultIncrement;
+    const startM = hmToMinutes(SETTINGS.dayStart);
+    const endM = hmToMinutes(SETTINGS.dayEnd);
+    const times = [];
+    for (let m = startM; m < endM; m += inc) {
+      const h = Math.floor(m/60), mi = m%60;
+      times.push(`${pad(h)}:${pad(mi)}`);
+    }
+    return times;
+  }
+
+  function renderGrid() {
+    const timeCol = $('#timeCol');
+    const dayCol = $('#dayCol');
+    timeCol.innerHTML = '';
+    dayCol.innerHTML = '<div id="dragOverlay" class="drag-overlay" aria-hidden="true"></div>';
+
+    const slots = genSlots();
+    for (const t of slots) {
+      const div = document.createElement('div');
+      div.className = 'time-slot'; div.textContent = t;
+      timeCol.appendChild(div);
+
+      const sdiv = document.createElement('div');
+      sdiv.className = 'slot'; sdiv.dataset.time = t;
+      dayCol.appendChild(sdiv);
+    }
+
+    renderBlocks();
+  }
+
+  function blocksForDate(dateStr) {
+    return BLOCKS.filter(b => b.date === dateStr).sort((a,b)=> hmToMinutes(a.start)-hmToMinutes(b.start));
+  }
+
+  function renderBlocks() {
+    const dayCol = $('#dayCol');
+    const overlay = $('#dragOverlay');
+    const inc = SETTINGS.defaultIncrement;
+    const slots = genSlots();
+    const slotHeight = 44; // CSS slot height
+    const startM = hmToMinutes(SETTINGS.dayStart);
+
+    // Remove existing block cards
+    dayCol.querySelectorAll('.block-card').forEach(n => n.remove());
+
+    const todays = blocksForDate(CURRENT_DATE);
+    for (const b of todays) {
+      const top = minutesToTop(hmToMinutes(b.start), startM, slotHeight, inc);
+      const bottom = minutesToTop(hmToMinutes(b.end), startM, slotHeight, inc);
+      const h = Math.max(44, bottom - top);
+
+      const card = document.createElement('div');
+      card.className = 'block-card';
+      if (b.completed) card.classList.add('completed');
+      card.style.top = (top + 2) + 'px';
+      card.style.height = (h - 4) + 'px';
+
+      card.innerHTML = `
+        <div class="block-complete">
+          <input type="checkbox" ${b.completed? 'checked':''} aria-label="Mark complete" />
+        </div>
+        <div class="block-main">
+          <div class="block-title">${b.title || 'Untitled'}</div>
+          <div class="block-time">${b.start}–${b.end}</div>
+          <div class="block-icons">
+            ${b.hasAudio ? '🎙️' : ''}
+            ${(b.ttsText && b.ttsText.trim()) ? '🗣️' : ''}
+          </div>
+        </div>
+        <div class="block-actions">
+          <button class="btn" data-act="edit">Edit</button>
+          <button class="btn" data-act="dup">Duplicate</button>
+          <button class="btn" data-act="del">Delete</button>
+          <button class="btn" data-act="attach">Attach Audio</button>
+          <button class="btn" data-act="preview">Preview</button>
+          <button class="btn" data-act="snooze">Snooze</button>
+        </div>
+      `;
+
+      // Listeners
+      const [chk] = card.querySelectorAll('input[type="checkbox"]');
+      chk.addEventListener('change', async () => {
+        b.completed = chk.checked;
+        b.updatedAt = Date.now();
+        await DB.blocksPut(b);
+        if (b.completed) {
+          // Jingle + confetti
+          playBase64Jingle(SETTINGS.jingleVolume);
+          confettiBurst();
+        }
+        renderBlocks();
+        updateProgress();
+      });
+
+      card.querySelectorAll('.btn').forEach(btn => btn.addEventListener('click', async (e) => {
+        const act = btn.dataset.act;
+        if (act === 'edit') openBlockEditor(b.id);
+        else if (act === 'dup') duplicateBlock(b.id);
+        else if (act === 'del') deleteBlock(b.id);
+        else if (act === 'attach') { openBlockEditor(b.id); selectRemindersTab(); }
+        else if (act === 'preview') previewBlock(b.id);
+        else if (act === 'snooze') snoozeBlock(b.id, 10); // 10 min
+      }));
+
+      dayCol.appendChild(card);
+    }
+
+    // Drag create behavior
+    const slotsEls = dayCol.querySelectorAll('.slot');
+    let dragStart = null; let dragging = false;
+
+    dayCol.addEventListener('mousedown', (e) => {
+      const slot = e.target.closest('.slot');
+      if (!slot) return;
+      dragging = true;
+      dragStart = slot;
+      overlay.style.display = 'block';
+      overlay.style.top = (slot.offsetTop + 2) + 'px';
+      overlay.style.height = (slotHeight - 4) + 'px';
+    });
+    dayCol.addEventListener('mousemove', (e) => {
+      if (!dragging || !dragStart) return;
+      const slot = e.target.closest('.slot');
+      if (!slot) return;
+      const startY = dragStart.offsetTop;
+      const endY = slot.offsetTop;
+      const top = Math.min(startY, endY) + 2;
+      const height = Math.max(slotHeight, Math.abs(endY - startY) + slotHeight) - 4;
+      overlay.style.top = top + 'px';
+      overlay.style.height = height + 'px';
+    });
+    document.addEventListener('mouseup', async (e) => {
+      if (!dragging) return;
+      dragging = false; overlay.style.display = 'none';
+      const end = e.target.closest('.slot') || dragStart;
+      const sHM = dragStart?.dataset.time || slots[0];
+      const eHM = end?.dataset.time || sHM;
+      // Normalize times
+      let sM = hmToMinutes(sHM), eM = hmToMinutes(eHM) + SETTINGS.defaultIncrement;
+      if (eM <= sM) eM = sM + SETTINGS.defaultIncrement;
+      // Create temp block and open editor
+      const tmp = await createBlock({
+        title: '', date: CURRENT_DATE,
+        start: `${pad(Math.floor(sM/60))}:${pad(sM%60)}`,
+        end: `${pad(Math.floor(eM/60))}:${pad(eM%60)}`,
+      });
+      openBlockEditor(tmp.id);
+    });
+  }
+
+  function updateProgress() {
+    const todays = blocksForDate(CURRENT_DATE);
+    const total = todays.length || 1;
+    const completed = todays.filter(b => b.completed).length;
+    $('#progressText').textContent = `${Math.round((completed/total)*100)}% complete`;
+  }
+
+  // ---------- Block CRUD ----------
+  async function createBlock({title='', date=CURRENT_DATE, start='09:00', end='10:00'}) {
+    const b = {
+      id: uid(), date, start, end, title, notes: '',
+      hasAudio: false, ttsText: '', ttsVoice: '', ttsRate: 1, ttsPitch: 1,
+      completed: false, createdAt: Date.now(), updatedAt: Date.now(), repeatRule: null
+    };
+    BLOCKS.push(b);
+    await DB.blocksPut(b);
+    renderBlocks(); scheduleAll(); updateProgress();
+    return b;
+  }
+  async function updateBlock(b) { b.updatedAt = Date.now(); await DB.blocksPut(b); renderBlocks(); scheduleAll(); }
+  async function duplicateBlock(id) {
+    const b = BLOCKS.find(x=>x.id===id); if (!b) return;
+    const clone = JSON.parse(JSON.stringify(b));
+    clone.id = uid(); clone.title = b.title + ' (copy)'; clone.completed = false; clone.createdAt = Date.now(); clone.updatedAt = Date.now();
+    BLOCKS.push(clone);
+    await DB.blocksPut(clone);
+    renderBlocks(); scheduleAll();
+  }
+  async function deleteBlock(id) {
+    if (!confirm('Delete this block?')) return;
+    const idx = BLOCKS.findIndex(x=>x.id===id);
+    if (idx>=0) BLOCKS.splice(idx,1);
+    await DB.blocksDelete(id);
+    await DB.audioDelete(id);
+    renderBlocks(); scheduleAll(); updateProgress();
+  }
+
+  // ---------- Block Editor ----------
+  let EDITING_ID = null;
+
+  function openBlockEditor(id) {
+    EDITING_ID = id;
+    const b = BLOCKS.find(x=>x.id===id);
+    if (!b) return;
+    $('#bTitle').value = b.title || '';
+    $('#bDate').value = b.date || CURRENT_DATE;
+    $('#bStart').value = b.start;
+    $('#bEnd').value = b.end;
+    $('#bNotes').value = b.notes || '';
+    $('#bTTSText').value = b.ttsText || '';
+    $('#bTTSRate').value = b.ttsRate || 1;
+    $('#bTTSPitch').value = b.ttsPitch || 1;
+    $('#bTTSToggle').value = (b.ttsText && !b.hasAudio) ? 'yes' : 'yes';
+    $('#bPreroll').value = (b.preroll === 'no') ? 'no' : 'yes';
+
+    // Repeat
+    const rep = b.repeatRule && Array.isArray(b.repeatRule.days) ? b.repeatRule.days : [];
+    const sel = $('#bRepeat');
+    Array.from(sel.options).forEach(o => o.selected = rep.includes(Number(o.value)));
+
+    // Audio info
+    DB.audioGet(id).then(a => {
+      if (a && a.durationSec) {
+        $('#bAudioInfo').textContent = `Attached audio • ${(a.durationSec).toFixed(1)}s • ${a.mime}`;
+      } else {
+        $('#bAudioInfo').textContent = 'No audio attached.';
+      }
+    });
+
+    $('#blockModalWrap').style.display = 'flex';
+  }
+
+  function closeBlockEditor() { $('#blockModalWrap').style.display = 'none'; EDITING_ID = null; }
+  function selectRemindersTab() { $$('.tabBtn').forEach(b=>b.classList.remove('active')); $$('.tabPane').forEach(p=>p.style.display='none'); $('[data-tab="remindersTab"]').classList.add('active'); $('#remindersTab').style.display='block'; }
+
+  async function saveBlockFromEditor() {
+    const id = EDITING_ID; if (!id) return;
+    const b = BLOCKS.find(x=>x.id===id); if (!b) return;
+    b.title = $('#bTitle').value.trim();
+    b.date = $('#bDate').value.trim() || CURRENT_DATE;
+    b.start = $('#bStart').value;
+    b.end = $('#bEnd').value;
+    b.notes = $('#bNotes').value;
+    b.ttsText = $('#bTTSText').value;
+    b.ttsRate = Number($('#bTTSRate').value)||1;
+    b.ttsPitch = Number($('#bTTSPitch').value)||1;
+    b.ttsVoice = $('#bTTSVoice').value;
+    b.preroll = $('#bPreroll').value;
+    const repDays = Array.from($('#bRepeat').selectedOptions).map(o=>Number(o.value));
+    b.repeatRule = repDays.length ? { days: repDays } : null;
+    await updateBlock(b);
+    closeBlockEditor();
+  }
+
+  async function handleBlockFileInput(e) {
+    const id = EDITING_ID; if (!id) return;
+    const file = e.target.files[0]; if (!file) return;
+    const arrayBuf = await file.arrayBuffer();
+    const blob = new Blob([arrayBuf], {type: file.type});
+
+    // Try to decode duration via AudioContext (best effort)
+    let durationSec = 0;
+    try {
+      ensureAudioContext();
+      const audioBuf = await audioCtx.decodeAudioData(arrayBuf.slice(0));
+      durationSec = audioBuf.duration || 0;
+    } catch(e){}
+
+    await DB.audioPut({ blockId: id, blob, mime: file.type, durationSec });
+    const b = BLOCKS.find(x=>x.id===id); if (b) { b.hasAudio = true; await DB.blocksPut(b); }
+    $('#bAudioInfo').textContent = `Attached audio • ${(durationSec).toFixed(1)}s • ${file.type}`;
+    renderBlocks(); scheduleAll();
+  }
+
+  async function removeBlockAudio() {
+    const id = EDITING_ID; if (!id) return;
+    await DB.audioDelete(id);
+    const b = BLOCKS.find(x=>x.id===id); if (b) { b.hasAudio = false; await DB.blocksPut(b); }
+    $('#bAudioInfo').textContent = 'No audio attached.';
+    renderBlocks(); scheduleAll();
+  }
+
+  async function previewBlock(id) {
+    const b = BLOCKS.find(x=>x.id===id); if (!b) return;
+    await playBlock(b, {preview:true});
+  }
+
+  function snoozeBlock(id, minutes=10) {
+    const b = BLOCKS.find(x=>x.id===id); if (!b) return;
+    const ms = minutes * 60 * 1000;
+    const when = now().getTime() + ms;
+    const tid = setTimeout(() => { playBlock(b); }, ms);
+    scheduled.push({ timeoutId: tid, blockId: b.id, when });
+    updateDiagnosticsTimers();
+  }
+
+  // ---------- Scheduling Engine ----------
+  function clearTimers() { scheduled.forEach(t=>clearTimeout(t.timeoutId)); scheduled = []; updateDiagnosticsTimers(); }
+
+  function scheduleAll() {
+    clearTimers();
+    const todays = blocksForDate(CURRENT_DATE).filter(b=>!b.completed);
+    const n = now();
+
+    for (const b of todays) {
+      const when = new Date(`${b.date}T${b.start}`);
+      const diff = when.getTime() - n.getTime();
+      if (diff <= 0 && diff > -5*60*1000) {
+        // missed within last 5 minutes — offer catch-up
+        showCatchup(b);
+      }
+      if (diff > 0) {
+        const tid = setTimeout(() => handleBlockStart(b.id), diff);
+        scheduled.push({ timeoutId: tid, blockId: b.id, when: when.getTime() });
+      }
+    }
+
+    updateDiagnosticsTimers();
+  }
+
+  function showCatchup(block) {
+    const wrap = $('#catchup');
+    wrap.innerHTML = `
+      <div class="box">
+        <div>Missed start for <strong>${block.title||'Untitled'}</strong> at ${block.start}. Catch up?</div>
+        <div style="display:flex; gap:8px;">
+          <button class="btn" id="catchPlay">Play now</button>
+          <button class="btn" id="catchSnooze">Snooze 10m</button>
+          <button class="btn" id="catchDismiss">Dismiss</button>
+        </div>
+      </div>`;
+    wrap.style.display = 'block';
+    $('#catchPlay').onclick = () => { playBlock(block); wrap.style.display='none'; };
+    $('#catchSnooze').onclick = () => { snoozeBlock(block.id, 10); wrap.style.display='none'; };
+    $('#catchDismiss').onclick = () => { wrap.style.display='none'; };
+  }
+
+  async function handleBlockStart(id) {
+    const b = BLOCKS.find(x=>x.id===id); if (!b || b.completed) return;
+    const pageVisible = document.visibilityState !== 'hidden';
+    const canAudio = audioUnlocked && pageVisible;
+
+    if (canAudio) {
+      await playBlock(b);
+    } else if (SETTINGS.notificationsEnabled && notifPermission === 'granted') {
+      sendNotification(`Block start: ${b.title||'Untitled'}`, b.ttsText || `${b.start}–${b.end}`);
+    }
+  }
+
+  async function playBlock(b, {preview=false}={}) {
+    try {
+      // Optional pre-roll chime 3 seconds prior — only for scheduled (not preview)
+      if (!preview && b.preroll !== 'no') {
+        playBase64Jingle(SETTINGS.jingleVolume);
+        await wait(3000);
+      }
+
+      // Queue if something is playing
+      if (currentAudioEl && !preview) {
+        playingQueue.push(b);
+        showNowPlaying();
+        return;
+      }
+
+      // Show now playing
+      currentPlayingBlock = b;
+      $('#npTitle').textContent = b.title || 'Untitled';
+      $('#npTime').textContent = `${b.start}–${b.end}`;
+      $('#nowPlaying').style.display = 'flex';
+
+      // Prefer attached audio, else TTS if available/allowed
+      const audioRec = await DB.audioGet(b.id);
+      if (audioRec && audioRec.blob) {
+        const url = URL.createObjectURL(audioRec.blob);
+        const a = new Audio(url);
+        a.volume = $('#npVolume').value ? Number($('#npVolume').value) : 1;
+        currentAudioEl = a;
+        await a.play();
+        await new Promise(res=> a.onended = res);
+        URL.revokeObjectURL(url);
+      } else if (b.ttsText && b.ttsText.trim()) {
+        await speak(b.ttsText, { voiceName: b.ttsVoice, rate: b.ttsRate, pitch: b.ttsPitch });
+      } else {
+        // Fallback: subtle jingle to avoid silence
+        playBase64Jingle(SETTINGS.jingleVolume);
+      }
+    } catch(e) {
+      console.error('Playback error', e);
+    } finally {
+      currentAudioEl = null; currentPlayingBlock = null;
+      // Play next in queue
+      if (playingQueue.length) {
+        const next = playingQueue.shift();
+        playBlock(next);
+      } else {
+        $('#nowPlaying').style.display = 'none';
+      }
+    }
+  }
+
+  function showNowPlaying() {
+    $('#nowPlaying').style.display = 'flex';
+  }
+
+  // ---------- Confetti ----------
+  function confettiBurst() {
+    const canvas = $('#confettiCanvas');
+    const ctx = canvas.getContext('2d');
+    const W = canvas.width = window.innerWidth; const H = canvas.height = window.innerHeight;
+    const pieces = Array.from({length: 120}).map(()=>({
+      x: Math.random()*W,
+      y: -20,
+      r: 4 + Math.random()*6,
+      c: `hsl(${Math.floor(Math.random()*360)}, 80%, 60%)`,
+      vx: -2 + Math.random()*4,
+      vy: 3 + Math.random()*4,
+      rot: Math.random()*Math.PI,
+      vr: -0.2 + Math.random()*0.4
+    }));
+    let t = 0; const maxT = 90; // frames
+    function step() {
+      ctx.clearRect(0,0,W,H);
+      pieces.forEach(p=>{
+        p.x += p.vx; p.y += p.vy; p.rot += p.vr;
+        ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot);
+        ctx.fillStyle = p.c; ctx.fillRect(-p.r, -p.r/2, p.r*2, p.r);
+        ctx.restore();
+      });
+      if (++t<maxT) requestAnimationFrame(step); else ctx.clearRect(0,0,W,H);
+    }
+    step();
+  }
+
+  // ---------- Import / Export ----------
+  async function exportData() {
+    const date = CURRENT_DATE;
+    const blocks = BLOCKS.filter(b=>b.date===date);
+
+    // Collect audio as base64
+    const audioMap = {};
+    for (const b of blocks) {
+      if (b.hasAudio) {
+        const rec = await DB.audioGet(b.id);
+        if (rec && rec.blob) {
+          const buf = await rec.blob.arrayBuffer();
+          const b64 = arrayBufferToBase64(buf);
+          audioMap[b.id] = { mime: rec.mime, base64: b64, durationSec: rec.durationSec||0 };
+        }
+      }
+    }
+
+    const templates = await DB.templatesAll();
+    const settings = SETTINGS;
+
+    const payload = { version: 1, exportedAt: Date.now(), date, blocks, audio: audioMap, templates, settings };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {type:'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `planner_${date}.json`; a.click();
+    URL.revokeObjectURL(url);
+    $('#imexSummary').textContent = `Exported ${blocks.length} blocks, ${Object.keys(audioMap).length} audio, ${templates.length} templates.`;
+  }
+
+  function arrayBufferToBase64(buffer) {
+    let binary = '';
+    const bytes = new Uint8Array(buffer);
+    const len = bytes.byteLength;
+    for (let i=0; i<len; i++) binary += String.fromCharCode(bytes[i]);
+    return btoa(binary);
+  }
+
+  async function importData(file) {
+    const text = await file.text();
+    const obj = JSON.parse(text);
+    if (!obj || typeof obj !== 'object') throw new Error('Invalid JSON');
+
+    // Settings
+    if (obj.settings) { SETTINGS = Object.assign(SETTINGS, obj.settings); await saveSettings(); }
+
+    // Templates
+    if (Array.isArray(obj.templates)) {
+      for (const t of obj.templates) {
+        if (!t.id) t.id = uid();
+        await DB.templatesPut(t);
+      }
+    }
+
+    // Blocks (merge for selected date)
+    if (Array.isArray(obj.blocks)) {
+      for (const b of obj.blocks) {
+        if (!b.id) b.id = uid();
+        BLOCKS.push(b);
+        await DB.blocksPut(b);
+      }
+      // Audio attachments
+      if (obj.audio) {
+        for (const [bid, a] of Object.entries(obj.audio)) {
+          if (!a || !a.base64) continue;
+          const bytes = Uint8Array.from(atob(a.base64), c=>c.charCodeAt(0));
+          const blob = new Blob([bytes], {type: a.mime || 'audio/mpeg'});
+          await DB.audioPut({ blockId: bid, blob, mime: a.mime||'audio/mpeg', durationSec: a.durationSec||0 });
+          const bb = BLOCKS.find(x=>x.id===bid); if (bb) { bb.hasAudio = true; await DB.blocksPut(bb); }
+        }
+      }
+    }
+
+    renderBlocks(); scheduleAll(); updateProgress();
+    $('#imexSummary').textContent = `Imported. Blocks now: ${BLOCKS.length}.`;
+  }
+
+  // ---------- Templates ----------
+  async function saveTemplateFromToday(name) {
+    const todays = blocksForDate(CURRENT_DATE);
+    const tpl = { id: uid(), name, blocks: todays.map(({id, ...rest})=>rest) };
+    await DB.templatesPut(tpl);
+    await renderTemplatesList();
+  }
+
+  async function renderTemplatesList() {
+    const list = await DB.templatesAll();
+    const wrap = $('#tplList');
+    wrap.innerHTML = '';
+    if (!list.length) { wrap.innerHTML = '<div class="hint">No templates saved yet.</div>'; return; }
+    list.forEach(t=>{
+      const item = document.createElement('div');
+      item.style.display = 'flex'; item.style.alignItems = 'center'; item.style.justifyContent='space-between'; item.style.border='1px solid var(--grid-border)'; item.style.borderRadius='10px'; item.style.padding='10px 12px'; item.style.marginBottom='8px'; item.style.background='var(--panel-2)';
+      item.innerHTML = `<div><strong>${t.name}</strong> <span class="hint">${t.blocks.length} blocks</span></div>
+      <div style="display:flex; gap:8px;">
+        <button class="btn" data-act="apply-over">Apply (overwrite)</button>
+        <button class="btn" data-act="apply-merge">Apply (merge empty slots)</button>
+        <button class="btn danger" data-act="del">Delete</button>
+      </div>`;
+      item.querySelectorAll('.btn').forEach(btn=>btn.addEventListener('click', async()=>{
+        const act = btn.dataset.act;
+        if (act==='del') { if (confirm('Delete template?')) { await DB.templatesDelete(t.id); await renderTemplatesList(); } }
+        if (act==='apply-over') { await applyTemplate(t, {overwrite:true}); }
+        if (act==='apply-merge') { await applyTemplate(t, {overwrite:false}); }
+      }));
+      wrap.appendChild(item);
+    });
+  }
+
+  async function applyTemplate(tpl, {overwrite=false}={}) {
+    if (overwrite) {
+      // delete today's
+      const todays = blocksForDate(CURRENT_DATE);
+      for (const b of todays) { await DB.blocksDelete(b.id); await DB.audioDelete(b.id); }
+      BLOCKS = BLOCKS.filter(b=>b.date!==CURRENT_DATE);
+    }
+    // Add clone of template blocks to today where slot empty
+    const todays = blocksForDate(CURRENT_DATE);
+    const occupied = todays.map(b=>b.start+'_'+b.end);
+    for (const blk of tpl.blocks) {
+      if (!overwrite) {
+        const key = blk.start+'_'+blk.end;
+        if (occupied.includes(key)) continue; // skip if time filled
+      }
+      await createBlock({ title: blk.title, date: CURRENT_DATE, start: blk.start, end: blk.end });
+    }
+    renderBlocks(); scheduleAll(); updateProgress();
+  }
+
+  // ---------- Settings ----------
+  async function loadSettings() {
+    for (const k of Object.keys(SETTINGS)) {
+      const v = await DB.settingsGet(k);
+      if (v !== null && v !== undefined) SETTINGS[k] = v;
+    }
+    // Theme & background load
+    setTheme(SETTINGS.theme);
+    if (SETTINGS.customBg) document.documentElement.style.setProperty('--bg', SETTINGS.customBg);
+
+    // Session audio unlock flag
+    audioUnlocked = localStorage.getItem('audioUnlocked') === '1';
+  }
+
+  async function saveSettings() {
+    for (const [k,v] of Object.entries(SETTINGS)) await DB.settingsSet(k, v);
+    setTheme(SETTINGS.theme);
+  }
+
+  // ---------- Diagnostics ----------
+  function updateDiagnosticsTimers() {
+    const list = scheduled.slice().sort((a,b)=>a.when-b.when).map(t=> new Date(t.when).toLocaleTimeString());
+    $('#diagTimers').textContent = list.length ? list.join(', ') : 'None scheduled.';
+  }
+  function updateDiag() {
+    $('#diagState').textContent = `Audio unlocked: ${audioUnlocked} | Notification permission: ${notifPermission}`;
+  }
+
+  // ---------- Keyboard shortcuts ----------
+  function initShortcuts() {
+    document.addEventListener('keydown', (e) => {
+      const typing = ['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName);
+      if (typing && SETTINGS.shortcuts==='on') return; // ignore while typing
+      if (e.key.toLowerCase()==='n') { e.preventDefault(); $('#newBlockBtn').click(); }
+      if (e.key.toLowerCase()==='s') { e.preventDefault(); if (BLOCKS.length) snoozeBlock(blocksForDate(CURRENT_DATE)[0]?.id, 10); }
+      if (e.key === ' ') { e.preventDefault(); const b = blocksForDate(CURRENT_DATE)[0]; if (b) previewBlock(b.id); }
+      if (e.key === 'Enter') { const b = blocksForDate(CURRENT_DATE)[0]; if (b) { b.completed = !b.completed; DB.blocksPut(b).then(()=>{ renderBlocks(); updateProgress(); }); } }
+    });
+  }
+
+  // ---------- Event Wiring ----------
+  function wireUI() {
+    // Onboarding
+    $('#onboardClose').onclick = () => $('#onboardWrap').style.display='none';
+    $('#onboardGotIt').onclick = () => $('#onboardWrap').style.display='none';
+    $('#enableAudioBtn').onclick = () => { unlockAudio(); playBase64Jingle(SETTINGS.jingleVolume); };
+    $('#askNotifBtn').onclick = async () => { await askNotificationPermission(); $('#testNotifBtn').disabled = (notifPermission!=='granted'); };
+    $('#testNotifBtn').onclick = () => sendNotification('Daily Block Planner','Notifications are working.');
+    $('#themeDark').onclick = ()=> { SETTINGS.theme='dark'; setTheme('dark'); };
+    $('#themeLight').onclick = ()=> { SETTINGS.theme='light'; setTheme('light'); };
+
+    // Top bar
+    $('#newBlockBtn').onclick = () => createBlock({ title: '', date: CURRENT_DATE, start: '09:00', end: '10:00' }).then(b=>openBlockEditor(b.id));
+    $('#settingsBtn').onclick = () => openSettings();
+    $('#helpBtn').onclick = () => { $('#helpWrap').style.display='flex'; };
+    $('#templatesBtn').onclick = async () => { await renderTemplatesList(); $('#templatesWrap').style.display='flex'; };
+    $('#importExportBtn').onclick = () => { $('#imexWrap').style.display='flex'; };
+
+    $$('.incBtn').forEach(b=> b.onclick = () => { SETTINGS.defaultIncrement = Number(b.dataset.inc); saveSettings(); renderGrid(); scheduleAll(); $$('.incBtn').forEach(x=>x.classList.toggle('active', x===b)); });
+
+    // Block editor tabs
+    $$('.tabBtn').forEach(btn=> btn.addEventListener('click', ()=>{
+      $$('.tabBtn').forEach(b=>b.classList.remove('active'));
+      btn.classList.add('active');
+      $$('.tabPane').forEach(p=>p.style.display='none');
+      const pane = '#' + btn.dataset.tab; $(pane).style.display='block';
+    }));
+
+    // Block editor buttons
+    $('#blockClose').onclick = closeBlockEditor;
+    $('#bCancel').onclick = closeBlockEditor;
+    $('#bSave').onclick = saveBlockFromEditor;
+    $('#bDelete').onclick = ()=> { const id = EDITING_ID; closeBlockEditor(); deleteBlock(id); };
+    $('#bDuplicate').onclick = ()=> { const id = EDITING_ID; duplicateBlock(id); };
+
+    // Audio attach/replace/remove/preview
+    $('#bAudioFile').addEventListener('change', handleBlockFileInput);
+    $('#bReplaceAudio').onclick = ()=> $('#bAudioFile').click();
+    $('#bRemoveAudio').onclick = removeBlockAudio;
+    $('#bPreviewAudio').onclick = ()=> { if (EDITING_ID) previewBlock(EDITING_ID); };
+
+    // TTS voices populate
+    function loadVoices() {
+      const sel = $('#bTTSVoice');
+      const vs = speechSynthesis.getVoices();
+      sel.innerHTML = '<option value="">Default</option>' + vs.map(v=>`<option value="${v.name}">${v.name} (${v.lang})</option>`).join('');
+    }
+    if ('speechSynthesis' in window) {
+      speechSynthesis.onvoiceschanged = loadVoices; loadVoices();
+    }
+
+    // Settings modal
+    $('#settingsClose').onclick = ()=> $('#settingsWrap').style.display='none';
+    $('#settingsCancel').onclick = ()=> $('#settingsWrap').style.display='none';
+    $('#settingsSave').onclick = saveSettingsFromUI;
+
+    // Templates modal
+    $('#tplClose').onclick = ()=> $('#templatesWrap').style.display='none';
+    $('#tplSave').onclick = async ()=> { const name = $('#tplName').value.trim(); if (!name) return; await saveTemplateFromToday(name); $('#tplName').value=''; };
+
+    // Import / Export
+    $('#imexClose').onclick = ()=> $('#imexWrap').style.display='none';
+    $('#imexDone').onclick = ()=> $('#imexWrap').style.display='none';
+    $('#exportBtn').onclick = exportData;
+    $('#importBtn').onclick = async ()=> { const f = $('#importFile').files[0]; if (!f) return; await importData(f); };
+
+    // Help
+    $('#helpClose').onclick = ()=> $('#helpWrap').style.display='none';
+    $('#helpDone').onclick = ()=> $('#helpWrap').style.display='none';
+
+    // Now playing controls
+    $('#npPause').onclick = ()=> { if (currentAudioEl) { if (!currentAudioEl.paused) currentAudioEl.pause(); else currentAudioEl.play(); } };
+    $('#npSkip').onclick = ()=> { if (currentAudioEl) { currentAudioEl.pause(); currentAudioEl.currentTime = currentAudioEl.duration; } };
+    $('#npVolume').value = 1;
+
+    // Visibility + reconcile each minute
+    document.addEventListener('visibilitychange', ()=> { reconcileMissed(); });
+    setInterval(()=> { reconcileMissed(); }, 60*1000);
+
+    // Window resize for confetti canvas size correctness
+    window.addEventListener('resize', ()=>{ const c = $('#confettiCanvas'); c.width = window.innerWidth; c.height = window.innerHeight; });
+  }
+
+  function openSettings() {
+    // Populate controls
+    $('#sDayStart').value = SETTINGS.dayStart;
+    $('#sDayEnd').value = SETTINGS.dayEnd;
+    $('#sInc').value = String(SETTINGS.defaultIncrement);
+    $('#sNotifs').value = SETTINGS.notificationsEnabled ? 'on' : 'off';
+    $('#sTheme').value = SETTINGS.theme;
+    $('#sJingle').value = SETTINGS.jingleVolume;
+    $('#sBg').value = SETTINGS.customBg || '';
+    $('#sShortcuts').value = SETTINGS.shortcuts;
+
+    // Diagnostics
+    updateDiagnosticsTimers(); updateDiag();
+
+    $('#settingsWrap').style.display='flex';
+  }
+
+  async function saveSettingsFromUI() {
+    SETTINGS.dayStart = $('#sDayStart').value || '04:00';
+    SETTINGS.dayEnd = $('#sDayEnd').value || '24:00';
+    SETTINGS.defaultIncrement = Number($('#sInc').value)||15;
+    SETTINGS.notificationsEnabled = $('#sNotifs').value === 'on';
+    SETTINGS.theme = $('#sTheme').value;
+    SETTINGS.jingleVolume = Number($('#sJingle').value)||0.7;
+    SETTINGS.customBg = $('#sBg').value.trim();
+    SETTINGS.shortcuts = $('#sShortcuts').value;
+
+    if (SETTINGS.customBg) document.documentElement.style.setProperty('--bg', SETTINGS.customBg);
+    else document.documentElement.style.removeProperty('--bg');
+
+    await saveSettings();
+    renderTopBar(); renderGrid(); scheduleAll();
+    $('#settingsWrap').style.display='none';
+  }
+
+  function reconcileMissed() {
+    const n = now();
+    const recent = new Date(n.getTime() - 5*60*1000);
+    const todays = blocksForDate(CURRENT_DATE).filter(b=>!b.completed);
+    for (const b of todays) {
+      const s = new Date(`${b.date}T${b.start}`);
+      if (s > recent && s <= n) showCatchup(b);
+    }
+  }
+
+  // ---------- Initialization ----------
+  async function init() {
+    await openDB();
+    await loadSettings();
+    renderTopBar();
+    renderGrid();
+
+    // Load all blocks
+    BLOCKS = await DB.blocksAll();
+
+    // Apply weekly repeats (lightweight): if today empty, and repeats exist for today-of-week
+    const todays = blocksForDate(CURRENT_DATE);
+    if (!todays.length) {
+      const repBlocks = BLOCKS.filter(b=> b.repeatRule && Array.isArray(b.repeatRule.days) && b.repeatRule.days.includes(new Date(CURRENT_DATE).getDay()));
+      for (const rb of repBlocks) {
+        await createBlock({ title: rb.title, date: CURRENT_DATE, start: rb.start, end: rb.end });
+      }
+    }
+
+    renderBlocks();
+    scheduleAll();
+    wireUI();
+    initShortcuts();
+
+    // Onboarding shown if no session audio unlock yet
+    if (!audioUnlocked) $('#onboardWrap').style.display = 'flex';
+  }
+
+  // Developer controls
+  $('#devSetNow')?.addEventListener('click', ()=>{ const m = Number($('#devOffset').value)||0; timeOffsetMs = m*60*1000; scheduleAll(); });
+  $('#devAdvance5')?.addEventListener('click', ()=>{ timeOffsetMs += 5*60*1000; scheduleAll(); });
+  $('#devResetOffset')?.addEventListener('click', ()=>{ timeOffsetMs = 0; $('#devOffset').value = 0; scheduleAll(); });
+
+  // Start app
+  init();
+
+  </script>
+</body>
+</html>
